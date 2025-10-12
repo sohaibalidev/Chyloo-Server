@@ -1,0 +1,47 @@
+{
+  "name": "chyloo-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Chyloo Backend — The server-side API for Chyloo, a modern social media platform with real-time features powered by Express, MongoDB, and Socket.io.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon index.js",
+    "start": "node index.js",
+    "upload": "git diff --quiet && git diff --cached --quiet && echo 'No changes to commit' || (git add . && git commit -m \"auto-update\" && git push origin main)",
+    "download": "git fetch origin && git reset --hard origin/main && git clean -fd && echo 'Project updated from GitHub'"
+  },
+  "keywords": [
+    "Chyloo",
+    "Backend",
+    "API",
+    "Social Media",
+    "Real-time",
+    "Socket.io",
+    "MongoDB",
+    "Express",
+    "Authentication",
+    "REST"
+  ],
+  "author": "Sohaib <msohaibaliofficial@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cloudinary": "^2.7.0",
+    "cookie": "^1.0.2",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "express-rate-limit": "^7.4.1",
+    "express-validator": "^7.2.1",
+    "helmet": "^8.1.0",
+    "mongoose": "^8.18.1",
+    "multer": "^2.0.2",
+    "nodemailer": "^7.0.5",
+    "socket.io": "^4.8.1",
+    "ua-parser-js": "^2.0.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
