@@ -1,5 +1,6 @@
 const config = require('../config/app.config');
 const enhancePosts = require('../helpers/post-enhancer');
+const cloudinary = require('../config/cloudinary.config');
 const { Post, Follow, User, Like } = require('../models/');
 
 exports.createPost = async (req, res) => {
@@ -41,6 +42,7 @@ exports.createPost = async (req, res) => {
       post: newPost,
     });
   } catch (err) {
+    console.log(err);
     res.status(500).json({
       success: false,
       message: 'Error creating post. Please try again later.',
