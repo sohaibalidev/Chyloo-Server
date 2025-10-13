@@ -97,7 +97,9 @@ exports.login = async (req, res) => {
     res.cookie('sessionId', sessionId, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
+      sameSite: 'none',
       maxAge: config.MAX_AGE,
+      path: '/',
     });
 
     res.status(200).json({
