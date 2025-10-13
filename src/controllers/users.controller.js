@@ -1,4 +1,5 @@
 const { Follow, User } = require('../models/');
+const cloudinary = require('../config/cloudinary.config');
 
 exports.getMe = async (req, res) => {
   try {
@@ -25,7 +26,7 @@ exports.getMe = async (req, res) => {
   }
 };
 
-exports.getUserById = async (req, res) => {
+exports.getUserByUsername = async (req, res) => {
   try {
     const { username } = req.params;
 
@@ -137,6 +138,150 @@ exports.unfollowUser = async (req, res) => {
       success: false,
       message: 'Error unfollowing user',
       error: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+};
+
+exports.updateProfile = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { name, bio, username, isVerified = false } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    if (username && username !== user.username) {
+      const existingUser = await User.findOne({
+        username,
+        _id: { $ne: userId },
+      });
+
+      if (existingUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'Username is already taken',
+        });
+      }
+    }
+
+    let avatarUrl = user.avatar;
+    if (req.file) {
+      try {
+        if (user.avatar && user.avatar.includes('cloudinary')) {
+          const filename = user.avatar.split('/').pop().split('.')[0].split('?')[0];
+          await cloudinary.uploader.destroy(`avatars/${filename}`);
+        }
+
+        const result = await cloudinary.uploader.upload(req.file.path, {
+          folder: 'avatars',
+          width: 300,
+          height: 300,
+          crop: 'fill',
+          gravity: 'face',
+          quality: 'auto',
+          format: 'webp',
+        });
+
+        avatarUrl = result.secure_url;
+      } catch (uploadError) {
+        console.error('Cloudinary upload error:', uploadError);
+        return res.status(500).json({
+          success: false,
+          message: 'Error uploading avatar',
+        });
+      }
+    }
+
+    const verifiedStatus =
+      typeof isVerified === 'string' ? isVerified === 'true' : Boolean(isVerified);
+
+    const updateData = {
+      ...(name && { name }),
+      ...(bio !== undefined && { bio }),
+      ...(username && { username }),
+      ...(isVerified !== undefined && { isVerified: verifiedStatus }),
+      ...(avatarUrl !== user.avatar && { avatar: avatarUrl }),
+    };
+
+    const updatedUser = await User.findByIdAndUpdate(userId, updateData, {
+      new: true,
+      runValidators: true,
+    }).select('-passwordHash -resetToken -resetTokenExpiry');
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: updatedUser,
+    });
+  } catch (error) {
+    console.error('Update profile error:', error);
+
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map((err) => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors,
+      });
+    }
+
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Username or email already exists',
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Server error while updating profile',
+    });
+  }
+};
+
+exports.deleteAvatar = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    if (user.avatar && user.avatar.includes('cloudinary')) {
+      try {
+        const publicId = user.avatar.split('/').pop().split('.')[0];
+        await cloudinary.uploader.destroy(`avatars/${publicId}`);
+      } catch (cloudinaryError) {
+        console.error('Cloudinary delete error:', cloudinaryError);
+      }
+    }
+
+    user.avatar = '';
+    await user.save();
+
+    const updatedUser = await User.findById(userId).select(
+      '-passwordHash -resetToken -resetTokenExpiry'
+    );
+
+    res.json({
+      success: true,
+      message: 'Avatar removed successfully',
+      user: updatedUser,
+    });
+  } catch (error) {
+    console.error('Delete avatar error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while removing avatar',
     });
   }
 };
