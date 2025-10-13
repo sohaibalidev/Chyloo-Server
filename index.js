@@ -27,6 +27,7 @@ connectDB()
   .then(() => {
     server.listen(config.PORT, () => {
       console.log(`[SERVER] Running at ${config.BASE_URL}`);
+      console.log(`[SERVER] Client URL ${config.FRONTEND_URL}`);
     });
   })
   .catch((err) => {
