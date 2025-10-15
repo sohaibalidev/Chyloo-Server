@@ -35,6 +35,18 @@ const userSchema = new mongoose.Schema(
         ref: 'Post',
       },
     ],
+    settings: {
+      theme: {
+        type: String,
+        enum: ['light', 'dark'],
+        default: 'dark',
+      },
+      sidebar: {
+        type: String,
+        enum: ['expanded', 'collapsed'],
+        default: 'expanded',
+      },
+    },
   },
   { timestamps: true }
 );

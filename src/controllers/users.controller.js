@@ -3,18 +3,18 @@ const cloudinary = require('../config/cloudinary.config');
 
 exports.getMe = async (req, res) => {
   try {
-    const { _id, username, name, bio, avatar, isVerified } = req.user;
+    const { _id, username, name, bio, avatar, isVerified, settings } = req.user;
 
     const following = await Follow.find({ followerId: _id }).select('-__v');
     const followingUsers = await Promise.all(
       following.map((follow) =>
-        User.findById(follow.followingId).select('_id username name avatar isVerified')
+        User.findById(follow.followingId).select('_id username name avatar isVerified ')
       )
     );
 
     res.json({
       success: true,
-      user: { _id, username, name, bio, avatar, isVerified, following: followingUsers },
+      user: { _id, username, name, bio, avatar, isVerified, settings, following: followingUsers },
     });
   } catch (error) {
     console.error('getMe error:', error);

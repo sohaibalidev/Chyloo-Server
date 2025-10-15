@@ -97,7 +97,7 @@ exports.searchAll = async (req, res) => {
         (user) =>
           ultraHyperSearch(
             searchQuery,
-            [`${user.username} ${user.name} ${user.bio || ''}`.toLowerCase()],
+            [`${user.username || ''} ${user.name || ''} ${user.bio || ''}`.toLowerCase()],
             { fuzzyThreshold: 0.6 }
           ).length > 0
       );
@@ -114,15 +114,17 @@ exports.searchAll = async (req, res) => {
         (post) =>
           ultraHyperSearch(
             searchQuery,
-            [`${post.caption} ${post.authorId.username} ${post.authorId.name}`.toLowerCase()],
+            [
+              `${post.caption || ''} ${post.authorId?.username || ''} ${
+                post.authorId?.name || ''
+              }`.toLowerCase(),
+            ],
             { fuzzyThreshold: 0.6 }
           ).length > 0
       );
 
-      // Get only the posts for the current page
       const paginatedPosts = matchedPosts.slice(skip, skip + limitNum);
 
-      // Use the post enhancer function
       posts = await enhancePosts(paginatedPosts, req.user);
     }
 

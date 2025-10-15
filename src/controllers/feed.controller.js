@@ -32,7 +32,7 @@ exports.getFeed = async (req, res) => {
     };
 
     const posts = await Post.find(query)
-      .populate('authorId', 'username name avatar')
+      .populate('authorId', 'username name avatar isVerified')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -67,7 +67,7 @@ exports.getInfiniteFeed = async (req, res) => {
     const query = { visibility: 'public' };
 
     const posts = await Post.find(query)
-      .populate('authorId', 'username name avatar')
+      .populate('authorId', 'username name avatar isVerified')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);

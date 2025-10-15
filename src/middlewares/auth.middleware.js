@@ -3,22 +3,21 @@ const { Session } = require('../models');
 
 exports.isGuest = async (req, res, next) => {
   try {
-    let sessionId = req.cookies?.sessionId;
+    const sessionId = req.cookies?.sessionId;
 
-    if (!sessionId) {
-      return next();
-    }
+    if (!sessionId) return next();
 
     const session = await Session.findOne({
       sessionId,
       isActive: true,
       expiresAt: { $gt: new Date() },
+    }).populate({
+      path: 'userId',
+      select: '-passwordHash -resetToken -resetTokenExpiry -__v',
     });
 
     if (!session || session.isExpired()) {
-      if (session && session.isExpired()) {
-        await session.deactivate();
-      }
+      if (session && session.isExpired()) await session.deactivate();
       return next();
     }
 
@@ -37,7 +36,7 @@ exports.isGuest = async (req, res, next) => {
 
 exports.isAuthenticated = async (req, res, next) => {
   try {
-    let sessionId = req.cookies?.sessionId;
+    const sessionId = req.cookies?.sessionId;
 
     if (!sessionId) {
       return res.status(401).json({
@@ -50,7 +49,10 @@ exports.isAuthenticated = async (req, res, next) => {
       sessionId,
       isActive: true,
       expiresAt: { $gt: new Date() },
-    }).populate('userId');
+    }).populate({
+      path: 'userId',
+      select: '-passwordHash -resetToken -resetTokenExpiry -__v',
+    });
 
     if (!session) {
       return res.status(401).json({
@@ -83,24 +85,23 @@ exports.isAuthenticated = async (req, res, next) => {
 
 exports.attachUser = async (req, res, next) => {
   try {
-    let sessionId = req.cookies?.sessionId;
+    const sessionId = req.cookies?.sessionId;
 
     req.user = null;
     req.sessionId = null;
 
-    if (!sessionId) {
-      return next();
-    }
+    if (!sessionId) return next();
 
     const session = await Session.findOne({
       sessionId,
       isActive: true,
       expiresAt: { $gt: new Date() },
-    }).populate('userId');
+    }).populate({
+      path: 'userId',
+      select: '-passwordHash -resetToken -resetTokenExpiry -__v',
+    });
 
-    if (!session) {
-      return next();
-    }
+    if (!session) return next();
 
     if (session.isExpired()) {
       await session.deactivate();
