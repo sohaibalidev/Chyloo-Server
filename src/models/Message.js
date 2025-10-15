@@ -26,7 +26,7 @@ const messageSchema = new mongoose.Schema(
     },
     text: {
       type: String,
-      maxlength: 5000,
+      maxlength: 1000,
       default: "",
     },
     media: [mediaSchema],

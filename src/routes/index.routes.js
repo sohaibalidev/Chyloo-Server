@@ -29,6 +29,7 @@ router.get('/health', checkHealth);
 /* Protected routes */
 const protectedRoutes = express.Router();
 protectedRoutes.use('/users', require('./users.routes'));
+protectedRoutes.use('/messages', require('./messages.routes'));
 protectedRoutes.use('/posts', require('./posts.routes'));
 protectedRoutes.use('/feed', require('./feed.routes'));
 protectedRoutes.use('/stories', require('./stories.routes'));

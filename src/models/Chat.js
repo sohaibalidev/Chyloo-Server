@@ -15,7 +15,7 @@ const chatSchema = new mongoose.Schema(
     },
     groupName: {
       type: String,
-      maxlength: 50,
+      maxlength: 30,
       default: null,
     },
     groupIcon: {

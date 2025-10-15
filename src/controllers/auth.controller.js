@@ -94,10 +94,12 @@ exports.login = async (req, res) => {
 
     await session.save();
 
+    const isProduction = process.env.NODE_ENV === 'production';
+
     res.cookie('sessionId', sessionId, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'none',
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
       maxAge: config.MAX_AGE,
       path: '/',
     });
