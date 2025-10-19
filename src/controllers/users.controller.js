@@ -117,6 +117,11 @@ exports.followUser = async (req, res) => {
       { upsert: true, new: true }
     );
 
+    if (follow) {
+      const NotificationController = require('./notification.controller');
+      await NotificationController.createFollowNotification(req.user._id, targetUserId);
+    }
+
     res.status(200).json({ success: true, message: 'User followed successfully', follow });
   } catch (err) {
     console.log(err);

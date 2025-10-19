@@ -13,6 +13,11 @@ exports.setupSocket = (server) => {
   io.on('connection', (socket) => {
     console.log(`[SOCKET] User connected: ${socket.id}`);
 
+    socket.on('joinUserRoom', (userId) => {
+      socket.join(`user_${userId}`);
+      console.log(`[SOCKET] User ${userId} joined their personal room`);
+    });
+
     socket.on('joinConversation', (chatId) => {
       socket.leaveAll();
       socket.join(chatId);

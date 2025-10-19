@@ -18,21 +18,18 @@ exports.getConversations = async (req, res) => {
       })
       .sort({ updatedAt: -1 });
 
-    const conversationsWithUnread = await Promise.all(
+    const conversationsWithStatus = await Promise.all(
       conversations.map(async (conv) => {
-        const unreadCount = await Message.countDocuments({
-          chatId: conv._id,
-          senderId: { $ne: userId },
-          seenBy: { $ne: userId },
-        });
-
         const conversationObj = conv.toObject();
-        conversationObj.unreadCount = unreadCount;
+
+        const hasUserSeen = conv.seenBy.includes(userId);
+        conversationObj.hasNewMessages = !hasUserSeen;
+
         return conversationObj;
       })
     );
 
-    res.json({ success: true, conversations: conversationsWithUnread });
+    res.json({ success: true, conversations: conversationsWithStatus });
   } catch (error) {
     console.error('Get conversations error:', error);
     res.status(500).json({ success: false, message: 'Failed to load conversations' });
@@ -49,9 +46,13 @@ exports.getMessages = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
+    if (!chat.seenBy.includes(userId)) {
+      chat.seenBy.push(userId);
+      await chat.save();
+    }
+
     const messages = await Message.find({ chatId })
       .populate('senderId', 'name username avatar')
-      .populate('seenBy', 'name username avatar')
       .sort({ createdAt: 1 });
 
     res.json({ success: true, messages });
@@ -79,7 +80,7 @@ exports.sendMessage = async (req, res) => {
     const userId = req.user._id;
     const files = req.files || [];
 
-    const chat = await Chat.findOne({ _id: chatId, members: userId });
+    const chat = await Chat.findOne({ _id: chatId, members: userId }).populate('members', '_id');
     if (!chat) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
@@ -107,14 +108,32 @@ exports.sendMessage = async (req, res) => {
 
     await message.save();
 
+    chat.seenBy = [userId]; 
     chat.lastMessageId = message._id;
     await chat.save();
 
+    await chat.populate('members', 'name username avatar');
     await message.populate('senderId', 'name username avatar');
-    await message.populate('seenBy', 'name username avatar');
 
     if (global._io) {
-      global._io.to(chatId).emit('newMessage', message);
+      global._io.to(chatId).emit('newMessage', {
+        message,
+        conversationStatus: {
+          seenBy: chat.seenBy,
+          hasNewMessages: true,
+        },
+      });
+
+      chat.members.forEach((member) => {
+        if (member._id.toString() !== userId.toString()) {
+          global._io.to(`user_${member._id}`).emit('refreshConversationList');
+        }
+      });
+
+      console.log(
+        `[SOCKET] Emitted refreshConversationList to members:`,
+        chat.members.map((m) => m._id).filter((id) => id.toString() !== userId.toString())
+      );
     }
 
     res.status(201).json({ success: true, message });
@@ -126,37 +145,31 @@ exports.sendMessage = async (req, res) => {
 
 exports.markAsSeen = async (req, res) => {
   try {
-    const { messageId } = req.params;
+    const { chatId } = req.body; 
     const userId = req.user._id;
 
-    const message = await Message.findById(messageId);
-    if (!message) {
-      return res.status(404).json({ success: false, message: 'Message not found' });
-    }
-
-    const chat = await Chat.findOne({ _id: message.chatId, members: userId });
+    const chat = await Chat.findOne({ _id: chatId, members: userId });
     if (!chat) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    if (!message.seenBy.includes(userId)) {
-      message.seenBy.push(userId);
-      await message.save();
+    if (!chat.seenBy.includes(userId)) {
+      chat.seenBy.push(userId);
+      await chat.save();
     }
 
-    await message.populate('seenBy', 'name username avatar');
-
     if (global._io) {
-      global._io.to(message.chatId.toString()).emit('messageSeen', {
-        messageId: message._id,
-        seenBy: message.seenBy,
+      global._io.to(chatId.toString()).emit('conversationSeen', {
+        chatId: chat._id,
+        seenBy: chat.seenBy,
+        userId: userId,
       });
     }
 
-    res.json({ success: true, seenBy: message.seenBy });
+    res.json({ success: true, seenBy: chat.seenBy });
   } catch (error) {
     console.error('Mark as seen error:', error);
-    res.status(500).json({ success: false, message: 'Failed to mark message as seen' });
+    res.status(500).json({ success: false, message: 'Failed to mark conversation as seen' });
   }
 };
 
@@ -185,6 +198,7 @@ exports.getOrCreateConversation = async (req, res) => {
       conversation = new Chat({
         members: [currentUserId, otherUserId],
         isGroup: false,
+        seenBy: [currentUserId], 
       });
 
       await conversation.save();
@@ -234,6 +248,7 @@ exports.createGroupConversation = async (req, res) => {
       isGroup: true,
       groupName,
       groupIcon,
+      seenBy: [currentUserId], 
     });
 
     await conversation.save();

@@ -123,3 +123,47 @@ exports.getUnreadCount = async (req, res) => {
     });
   }
 };
+
+exports.createFollowNotification = async (senderId, recipientId) => {
+  try {
+    const Notification = require('../models/Notification');
+    const User = require('../models/User');
+
+    const sender = await User.findById(senderId).select('username avatar');
+    const recipient = await User.findById(recipientId).select('username');
+
+    if (!sender || !recipient) {
+      throw new Error('Sender or recipient not found');
+    }
+
+    const notification = await Notification.createNotification({
+      recipientId,
+      senderId,
+      type: 'follow',
+      targetId: senderId, 
+      targetType: 'User',
+      message: `${sender.username} started following you`,
+      metadata: {
+        followAction: 'followed',
+      },
+    });
+
+    const populatedNotification = await Notification.findById(notification._id)
+      .populate('senderId', 'username avatar')
+      .lean();
+
+    if (global._io) {
+      global._io
+        .to(`user_${recipientId.toString()}`)
+        .emit('new_notification', populatedNotification);
+      console.log(`[SOCKET] Emitted new_notification to user_${recipientId.toString()}`);
+    } else {
+      console.log('[SOCKET] Socket.IO not available for notification');
+    }
+
+    return notification;
+  } catch (error) {
+    console.error('Error creating follow notification:', error);
+    throw error;
+  }
+};

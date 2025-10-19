@@ -1,11 +1,11 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 const chatSchema = new mongoose.Schema(
   {
     members: [
       {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
+        ref: 'User',
         required: true,
       },
     ],
@@ -24,8 +24,20 @@ const chatSchema = new mongoose.Schema(
     },
     lastMessageId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Message",
+      ref: 'Message',
       default: null,
+    },
+    // NEW: Seen by array at conversation level
+    seenBy: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
+    // NEW: Track if there are new messages for each user
+    hasNewMessages: {
+      type: Boolean,
+      default: false,
     },
   },
   {
@@ -36,4 +48,4 @@ const chatSchema = new mongoose.Schema(
 chatSchema.index({ members: 1 });
 chatSchema.index({ updatedAt: -1 });
 
-module.exports = mongoose.model("Chat", chatSchema);
+module.exports = mongoose.model('Chat', chatSchema);
