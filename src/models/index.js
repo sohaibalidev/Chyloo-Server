@@ -7,6 +7,7 @@ const Chat = require('./Chat');
 const Message = require('./Message');
 const Session = require('./Session');
 const Story = require('./Story');
+const Notification = require('./Notification');
 
 module.exports = {
   User,
@@ -18,4 +19,5 @@ module.exports = {
   Message,
   Session,
   Story,
+  Notification,
 };

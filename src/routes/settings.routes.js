@@ -1,8 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const { isAuthenticated } = require('../middlewares/auth.middleware');
-const { updateSettings } = require('../controllers/settings.controller');
+const {
+  updateProfile,
+  deleteAvatar,
+  updateSettings,
+} = require('../controllers/settings.controller');
+const upload = require('../config/multer.config');
 
-router.patch('/', isAuthenticated, updateSettings);
+router.put('/profile', upload.single('avatar'), updateProfile);
+router.delete('/avatar', deleteAvatar);
+router.put('/preferences', updateSettings);
 
 module.exports = router;

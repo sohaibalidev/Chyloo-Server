@@ -41,11 +41,6 @@ const userSchema = new mongoose.Schema(
         enum: ['light', 'dark'],
         default: 'dark',
       },
-      sidebar: {
-        type: String,
-        enum: ['expanded', 'collapsed'],
-        default: 'expanded',
-      },
     },
   },
   { timestamps: true }

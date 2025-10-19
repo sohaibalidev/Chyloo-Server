@@ -3,7 +3,7 @@ const cloudinary = require('../config/cloudinary.config');
 
 exports.getMe = async (req, res) => {
   try {
-    const { _id, username, name, bio, avatar, isVerified, settings } = req.user;
+    const { _id, username, name, bio, avatar, isVerified, settings, accountStatus } = req.user;
 
     const following = await Follow.find({ followerId: _id }).select('-__v');
     const followingUsers = await Promise.all(
@@ -14,7 +14,17 @@ exports.getMe = async (req, res) => {
 
     res.json({
       success: true,
-      user: { _id, username, name, bio, avatar, isVerified, settings, following: followingUsers },
+      user: {
+        _id,
+        username,
+        name,
+        bio,
+        avatar,
+        isVerified,
+        settings,
+        accountStatus,
+        following: followingUsers,
+      },
     });
   } catch (error) {
     console.error('getMe error:', error);
@@ -138,150 +148,6 @@ exports.unfollowUser = async (req, res) => {
       success: false,
       message: 'Error unfollowing user',
       error: process.env.NODE_ENV === 'development' ? err.message : undefined,
-    });
-  }
-};
-
-exports.updateProfile = async (req, res) => {
-  try {
-    const userId = req.user._id;
-    const { name, bio, username, isVerified = false } = req.body;
-
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found',
-      });
-    }
-
-    if (username && username !== user.username) {
-      const existingUser = await User.findOne({
-        username,
-        _id: { $ne: userId },
-      });
-
-      if (existingUser) {
-        return res.status(400).json({
-          success: false,
-          message: 'Username is already taken',
-        });
-      }
-    }
-
-    let avatarUrl = user.avatar;
-    if (req.file) {
-      try {
-        if (user.avatar && user.avatar.includes('cloudinary')) {
-          const filename = user.avatar.split('/').pop().split('.')[0].split('?')[0];
-          await cloudinary.uploader.destroy(`avatars/${filename}`);
-        }
-
-        const result = await cloudinary.uploader.upload(req.file.path, {
-          folder: 'avatars',
-          width: 300,
-          height: 300,
-          crop: 'fill',
-          gravity: 'face',
-          quality: 'auto',
-          format: 'webp',
-        });
-
-        avatarUrl = result.secure_url;
-      } catch (uploadError) {
-        console.error('Cloudinary upload error:', uploadError);
-        return res.status(500).json({
-          success: false,
-          message: 'Error uploading avatar',
-        });
-      }
-    }
-
-    const verifiedStatus =
-      typeof isVerified === 'string' ? isVerified === 'true' : Boolean(isVerified);
-
-    const updateData = {
-      ...(name && { name }),
-      ...(bio !== undefined && { bio }),
-      ...(username && { username }),
-      ...(isVerified !== undefined && { isVerified: verifiedStatus }),
-      ...(avatarUrl !== user.avatar && { avatar: avatarUrl }),
-    };
-
-    const updatedUser = await User.findByIdAndUpdate(userId, updateData, {
-      new: true,
-      runValidators: true,
-    }).select('-passwordHash -resetToken -resetTokenExpiry');
-
-    res.json({
-      success: true,
-      message: 'Profile updated successfully',
-      user: updatedUser,
-    });
-  } catch (error) {
-    console.error('Update profile error:', error);
-
-    if (error.name === 'ValidationError') {
-      const errors = Object.values(error.errors).map((err) => err.message);
-      return res.status(400).json({
-        success: false,
-        message: 'Validation error',
-        errors,
-      });
-    }
-
-    if (error.code === 11000) {
-      return res.status(400).json({
-        success: false,
-        message: 'Username or email already exists',
-      });
-    }
-
-    res.status(500).json({
-      success: false,
-      message: 'Server error while updating profile',
-    });
-  }
-};
-
-exports.deleteAvatar = async (req, res) => {
-  try {
-    const userId = req.user._id;
-
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found',
-      });
-    }
-
-    if (user.avatar && user.avatar.includes('cloudinary')) {
-      try {
-        const publicId = user.avatar.split('/').pop().split('.')[0];
-        await cloudinary.uploader.destroy(`avatars/${publicId}`);
-      } catch (cloudinaryError) {
-        console.error('Cloudinary delete error:', cloudinaryError);
-      }
-    }
-
-    user.avatar = '';
-    await user.save();
-
-    const updatedUser = await User.findById(userId).select(
-      '-passwordHash -resetToken -resetTokenExpiry'
-    );
-
-    res.json({
-      success: true,
-      message: 'Avatar removed successfully',
-      user: updatedUser,
-    });
-  } catch (error) {
-    console.error('Delete avatar error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while removing avatar',
     });
   }
 };

@@ -10,8 +10,4 @@ router.get('/:username', userController.getUserByUsername);
 router.post('/:id/follow', userController.followUser);
 router.delete('/:id/follow', userController.unfollowUser);
 
-router.put('/profile', upload.single('avatar'), userController.updateProfile);
-
-router.delete('/avatar', userController.deleteAvatar);
-
 module.exports = router;
