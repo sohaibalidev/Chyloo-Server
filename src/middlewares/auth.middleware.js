@@ -6,7 +6,7 @@ exports.isGuest = async (req, res, next) => {
     const sessionId = req.cookies?.sessionId;
 
     if (!sessionId) return next();
-
+ 
     const session = await Session.findOne({
       sessionId,
       isActive: true,
