@@ -24,7 +24,16 @@ const postSchema = new mongoose.Schema(
       maxlength: 2200,
       default: '',
     },
-    media: [mediaSchema],
+    media: {
+      type: [mediaSchema],
+      required: true,
+      validate: {
+        validator: function (mediaArray) {
+          return mediaArray.length > 0;
+        },
+        message: 'At least one media file is required',
+      },
+    },
     visibility: {
       type: String,
       enum: ['public', 'private', 'followers'],

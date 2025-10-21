@@ -1,7 +1,6 @@
-const { Story, User } = require('../models');
+const { Story, User, Follow } = require('../models');
 const cloudinary = require('../config/cloudinary.config');
 
-// Create a new story
 exports.createStory = async (req, res) => {
   try {
     if (!req.file) {
@@ -45,13 +44,17 @@ exports.createStory = async (req, res) => {
   }
 };
 
-// Get stories from followed users
 exports.getFollowedStories = async (req, res) => {
   try {
     const currentUserId = req.user.id;
-    const currentUser = await User.findById(currentUserId).select('following');
-    const followingIds = currentUser.following || [];
-    const userIds = [...followingIds, currentUserId];
+
+    const follows = await Follow.find({
+      followerId: currentUserId,
+      status: 'accepted',
+    }).select('followingId');
+
+    const followingIds = follows.map((f) => f.followingId.toString());
+    const userIds = [...followingIds, currentUserId.toString()];
 
     const stories = await Story.find({
       authorId: { $in: userIds },
@@ -62,10 +65,11 @@ exports.getFollowedStories = async (req, res) => {
       .sort({ createdAt: -1 });
 
     const storiesByUser = stories.reduce((acc, story) => {
-      const userId = story.authorId._id.toString();
-      if (!acc[userId]) {
-        acc[userId] = { user: story.authorId, stories: [] };
-      }
+      const author = story.authorId;
+      if (!author) return acc;
+
+      const userId = author._id.toString();
+      if (!acc[userId]) acc[userId] = { user: author, stories: [] };
       acc[userId].stories.push(story);
       return acc;
     }, {});
@@ -77,7 +81,6 @@ exports.getFollowedStories = async (req, res) => {
   }
 };
 
-// Get user's active stories
 exports.getUserStories = async (req, res) => {
   try {
     const userId = req.params.userId;
@@ -92,7 +95,6 @@ exports.getUserStories = async (req, res) => {
   }
 };
 
-// Delete a story
 exports.deleteStory = async (req, res) => {
   try {
     const story = await Story.findOne({
@@ -112,7 +114,6 @@ exports.deleteStory = async (req, res) => {
   }
 };
 
-// Mark expired stories as inactive (cron job)
 exports.deactivateExpiredStories = async () => {
   try {
     const result = await Story.updateMany(

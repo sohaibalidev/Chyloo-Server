@@ -8,25 +8,60 @@ exports.createPost = async (req, res) => {
   try {
     const { caption, visibility } = req.body;
     const authorId = req.user._id;
-    let media = [];
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least one media file (image or video) is required',
+      });
+    }
+
+    const allowedMimeTypes = [
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'video/mp4',
+      'video/quicktime',
+    ];
+
+    const invalidFiles = req.files.filter((file) => !allowedMimeTypes.includes(file.mimetype));
+
+    if (invalidFiles.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'Invalid file type. Only images (JPEG, PNG, GIF, WebP) and videos (MP4, MOV) are allowed',
+      });
+    }
 
     const allowedVisibilities = ['public', 'private', 'followers'];
     const postVisibility = allowedVisibilities.includes(visibility) ? visibility : 'public';
 
-    if (req.files && req.files.length > 0) {
-      const uploadPromises = req.files.map((file) =>
-        cloudinary.uploader.upload(file.path, {
-          folder: 'posts',
-          resource_type: 'auto',
-        })
-      );
+    const uploadPromises = req.files.map((file) =>
+      cloudinary.uploader.upload(file.path, {
+        folder: 'posts',
+        resource_type: 'auto',
+      })
+    );
 
-      const results = await Promise.all(uploadPromises);
-      media = results.map((r) => ({
-        url: r.secure_url,
-        type: r.resource_type === 'image' || r.resource_type === 'video' ? r.resource_type : 'file',
-      }));
-    }
+    const results = await Promise.all(uploadPromises);
+
+    const media = results.map((result) => {
+      let mediaType;
+      if (result.resource_type === 'image') {
+        mediaType = result.format === 'gif' ? 'gif' : 'image';
+      } else if (result.resource_type === 'video') {
+        mediaType = 'video';
+      } else {
+        mediaType = 'image'; 
+      }
+
+      return {
+        url: result.secure_url,
+        type: mediaType,
+      };
+    });
 
     const newPost = await Post.create({
       authorId,
@@ -43,7 +78,19 @@ exports.createPost = async (req, res) => {
       post: newPost,
     });
   } catch (err) {
-    console.log(err);
+    console.log('Post creation error:', err);
+
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message:
+          'Validation error: ' +
+          Object.values(err.errors)
+            .map((e) => e.message)
+            .join(', '),
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Error creating post. Please try again later.',
