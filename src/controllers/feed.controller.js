@@ -1,5 +1,6 @@
-const { Follow, Post, Session } = require('../models');
-const enhancePosts = require('../helpers/post-enhancer');
+const mongoose = require('mongoose');
+const { Follow, Post, User } = require('../models');
+const enhancePosts = require('../utils/post-enhancer');
 
 exports.getFeed = async (req, res) => {
   try {
@@ -7,46 +8,39 @@ exports.getFeed = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    const userSessions = await Session.find({ userId: req.user._id, isActive: true }).sort({
-      createdAt: -1,
-    });
-    let daysLimit = 5;
-    if (userSessions.length > 0) {
-      const mostRecentLogin = userSessions[0].createdAt;
-      const daysSinceLogin = Math.floor((new Date() - mostRecentLogin) / (1000 * 60 * 60 * 24));
-      daysLimit = Math.max(5, daysSinceLogin);
-    }
+    const followingDocs = await Follow.find({
+      followerId: req.user._id,
+      status: 'accepted',
+    }).select('followingId');
+    const followingIds = followingDocs.map((f) => f.followingId.toString());
 
-    const followingDocs = await Follow.find({ followerId: req.user._id }).select('followingId');
-    const followingIds = followingDocs.map((f) => f.followingId);
-
-    const sinceDate = new Date();
-    sinceDate.setDate(sinceDate.getDate() - daysLimit);
-
-    const query = {
-      createdAt: { $gte: sinceDate },
-      $or: [
-        { authorId: { $in: followingIds }, visibility: { $in: ['public', 'followers'] } },
-        { authorId: req.user._id },
-      ],
-    };
-
-    const posts = await Post.find(query)
-      .populate('authorId', 'username name avatar isVerified')
+    let posts = await Post.find({})
+      .populate('authorId', 'username name avatar isVerified accountStatus')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
 
-    const enhancedPosts = await enhancePosts(posts, req.user);
+    posts = posts.filter((post) => {
+      const authorId = post.authorId._id.toString();
+      const isOwnPost = authorId === req.user._id.toString();
+      const isFollowing = followingIds.includes(authorId);
 
-    const total = await Post.countDocuments(query);
-    const hasMore = skip + enhancedPosts.length < total;
+      if (isOwnPost) return true;
+
+      if (isFollowing) {
+        if (post.visibility === 'public') return true;
+        if (post.visibility === 'followers') return true;
+      }
+
+      return false;
+    });
+
+    const enhancedPosts = await enhancePosts(posts, req.user);
 
     res.json({
       success: true,
       posts: enhancedPosts,
-      feedDaysLimit: daysLimit,
-      pagination: { current: page, hasMore, total },
+      pagination: { current: page, hasMore: posts.length === limit },
     });
   } catch (err) {
     console.log(err);
@@ -58,23 +52,130 @@ exports.getFeed = async (req, res) => {
   }
 };
 
+// exports.getInfiniteFeed = async (req, res) => {
+//   try {
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = parseInt(req.query.limit) || 10;
+//     const skip = (page - 1) * limit;
+
+//     const followingDocs = await Follow.find({
+//       followerId: req.user._id,
+//       status: 'accepted',
+//     }).select('followingId');
+//     const followingIds = followingDocs.map((f) => f.followingId.toString());
+
+//     let posts = await Post.find({ visibility: 'public' })
+//       .populate('authorId', 'username name avatar isVerified accountStatus')
+//       .sort({ createdAt: -1 })
+//       .skip(skip)
+//       .limit(limit);
+
+//     posts = posts.filter((post) => {
+//       const authorId = post.authorId._id.toString();
+//       const isOwnPost = authorId === req.user._id.toString();
+//       const isFollowing = followingIds.includes(authorId);
+
+//       if (isOwnPost) return false;
+
+//       return !isFollowing;
+//     });
+
+//     const enhancedPosts = await enhancePosts(posts, req.user);
+
+//     const total = await Post.countDocuments({
+//       visibility: 'public',
+//       authorId: { $nin: [...followingIds, req.user._id] },
+//     });
+
+//     const hasMore = skip + enhancedPosts.length < total;
+
+//     res.json({
+//       success: true,
+//       posts: enhancedPosts,
+//       pagination: { current: page, hasMore, total },
+//     });
+//   } catch (err) {
+//     console.log(err);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Error fetching explore feed',
+//       error: process.env.NODE_ENV === 'development' ? err.message : undefined,
+//     });
+//   }
+// };
+
 exports.getInfiniteFeed = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    const query = { visibility: 'public' };
+    const followingDocs = await Follow.find({
+      followerId: req.user._id,
+      status: 'accepted',
+    }).select('followingId');
+    const followingIds = followingDocs.map((f) => f.followingId.toString());
 
-    const posts = await Post.find(query)
-      .populate('authorId', 'username name avatar isVerified')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    // Use aggregation to filter posts and users in one query
+    const posts = await Post.aggregate([
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'authorId',
+          foreignField: '_id',
+          as: 'author',
+        },
+      },
+      {
+        $unwind: '$author',
+      },
+      {
+        $match: {
+          visibility: 'public',
+          'author.accountStatus': 'public', // Exclude private accounts
+          authorId: {
+            $nin: [...followingIds.map((id) => new mongoose.Types.ObjectId(id)), req.user._id],
+          },
+        },
+      },
+      {
+        $sort: { createdAt: -1 },
+      },
+      {
+        $skip: skip,
+      },
+      {
+        $limit: limit,
+      },
+      {
+        $project: {
+          // Include all post fields you need
+          content: 1,
+          media: 1,
+          likes: 1,
+          comments: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          // Author fields
+          'author.username': 1,
+          'author.name': 1,
+          'author.avatar': 1,
+          'author.isVerified': 1,
+          'author.accountStatus': 1,
+        },
+      },
+    ]);
 
     const enhancedPosts = await enhancePosts(posts, req.user);
 
-    const total = await Post.countDocuments(query);
+    const total = await Post.countDocuments({
+      visibility: 'public',
+      authorId: {
+        $in: await User.find({ accountStatus: 'public' }).distinct('_id'),
+        $nin: [...followingIds, req.user._id],
+      },
+    });
+
     const hasMore = skip + enhancedPosts.length < total;
 
     res.json({

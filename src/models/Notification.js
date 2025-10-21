@@ -14,7 +14,7 @@ const notificationSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['like_post', 'like_comment', 'comment', 'follow'],
+      enum: ['like_post', 'like_comment', 'comment', 'follow', 'follow_accept', 'follow_request'],
       required: true,
     },
     targetId: {
@@ -50,13 +50,9 @@ notificationSchema.index({ recipientId: 1, isRead: 1 });
 notificationSchema.index({ senderId: 1, type: 1, targetId: 1 });
 
 notificationSchema.statics.createNotification = async function (notificationData) {
-  try {
-    const notification = new this(notificationData);
-    await notification.save();
-    return notification;
-  } catch (error) {
-    throw error;
-  }
+  const notification = new this(notificationData);
+  await notification.save();
+  return notification;
 };
 
 notificationSchema.methods.markAsRead = function () {

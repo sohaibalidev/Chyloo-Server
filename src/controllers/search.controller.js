@@ -1,5 +1,5 @@
 const { User, Post, Like, Comment } = require('../models/');
-const enhancePosts = require('../helpers/post-enhancer');
+const enhancePosts = require('../utils/post-enhancer');
 
 function ultraHyperSearch(query, items, options = {}) {
   const { fuzzyThreshold = 0.7, caseSensitive = false } = options;

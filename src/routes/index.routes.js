@@ -31,6 +31,7 @@ const protectedRoutes = express.Router();
 protectedRoutes.use('/users', require('./users.routes'));
 protectedRoutes.use('/settings', require('./settings.routes'));
 protectedRoutes.use('/notifications', require('./notifications.routes'));
+protectedRoutes.use('/comments', require('./comments.routes'));
 protectedRoutes.use('/messages', require('./messages.routes'));
 protectedRoutes.use('/posts', require('./posts.routes'));
 protectedRoutes.use('/feed', require('./feed.routes'));

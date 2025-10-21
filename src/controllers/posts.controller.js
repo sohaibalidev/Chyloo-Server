@@ -1,7 +1,8 @@
 const config = require('../config/app.config');
-const enhancePosts = require('../helpers/post-enhancer');
-const cloudinary = require('../config/cloudinary.config');
+const enhancePosts = require('../utils/post-enhancer');
 const { Post, Follow, User, Like } = require('../models/');
+const cloudinary = require('../config/cloudinary.config');
+const NotificationService = require('../services/notification.service');
 
 exports.createPost = async (req, res) => {
   try {
@@ -56,12 +57,31 @@ exports.likePost = async (req, res) => {
     const userId = req.user._id;
     const { postId } = req.params;
 
-    const post = await Post.findById(postId);
+    const post = await Post.findById(postId).populate(
+      'authorId',
+      'username name avatar isVerified accountStatus'
+    );
     if (!post)
       return res.status(404).json({
         success: false,
         message: 'Post not found',
       });
+
+    const canAccessAccount = await checkAccountAccess(post.authorId, userId);
+    if (!canAccessAccount) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to interact with posts from this private account',
+      });
+    }
+
+    const canAccessPost = await checkPostAccess(post, userId);
+    if (!canAccessPost) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to interact with this post',
+      });
+    }
 
     const existingLike = await Like.findOne({ targetId: postId, userId, type: 'post' });
 
@@ -74,6 +94,9 @@ exports.likePost = async (req, res) => {
       });
     } else {
       await Like.create({ targetId: postId, userId, type: 'post' });
+
+      await NotificationService.createLikeNotification(userId, postId, 'post');
+
       return res.status(200).json({
         success: true,
         isLiked: true,
@@ -94,12 +117,31 @@ exports.savePost = async (req, res) => {
     const userId = req.user._id;
     const { postId } = req.params;
 
-    const post = await Post.findById(postId);
+    const post = await Post.findById(postId).populate(
+      'authorId',
+      'username name avatar isVerified accountStatus'
+    );
     if (!post)
       return res.status(404).json({
         success: false,
         message: 'Post not found',
       });
+
+    const canAccessAccount = await checkAccountAccess(post.authorId, userId);
+    if (!canAccessAccount) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to save posts from this private account',
+      });
+    }
+
+    const canAccessPost = await checkPostAccess(post, userId);
+    if (!canAccessPost) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to save this post',
+      });
+    }
 
     const user = await User.findById(userId);
     if (!user)
@@ -134,7 +176,10 @@ exports.savePost = async (req, res) => {
 
 exports.getPostById = async (req, res) => {
   try {
-    const post = await Post.findById(req.params.id).populate('authorId', 'username name avatar isVerified');
+    const post = await Post.findById(req.params.id).populate(
+      'authorId',
+      'username name avatar isVerified accountStatus'
+    );
 
     if (!post) {
       return res.status(404).json({
@@ -143,29 +188,20 @@ exports.getPostById = async (req, res) => {
       });
     }
 
-    if (post.visibility === 'private') {
-      if (post.authorId._id.toString() !== req.user._id.toString()) {
-        return res.status(404).json({
-          success: false,
-          message: 'Post not found',
-        });
-      }
+    const canAccessAccount = await checkAccountAccess(post.authorId, req.user._id);
+    if (!canAccessAccount) {
+      return res.status(404).json({
+        success: false,
+        message: 'Post not found',
+      });
     }
 
-    if (post.visibility === 'followers') {
-      if (post.authorId._id.toString() !== req.user._id.toString()) {
-        const isFollowing = await Follow.exists({
-          followerId: req.user._id,
-          followingId: post.authorId._id,
-        });
-
-        if (!isFollowing) {
-          return res.status(404).json({
-            success: false,
-            message: 'Post not found',
-          });
-        }
-      }
+    const canAccessPost = await checkPostAccess(post, req.user._id);
+    if (!canAccessPost) {
+      return res.status(404).json({
+        success: false,
+        message: 'Post not found',
+      });
     }
 
     res.status(200).json({
@@ -194,6 +230,25 @@ exports.getPostsByUserId = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
+    const targetUser = await User.findById(userId).select('accountStatus');
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    const canAccessAccount = await checkAccountAccess(
+      { _id: userId, accountStatus: targetUser.accountStatus },
+      req.user._id
+    );
+    if (!canAccessAccount) {
+      return res.status(200).json({
+        success: false,
+        message: "This user's account is private. Posts are not visible.",
+      });
+    }
+
     let query = { authorId: userId };
 
     if (req.user._id.toString() !== userId) {
@@ -202,6 +257,7 @@ exports.getPostsByUserId = async (req, res) => {
       const isFollowing = await Follow.exists({
         followerId: req.user._id,
         followingId: userId,
+        status: 'accepted',
       });
 
       if (isFollowing) {
@@ -212,7 +268,7 @@ exports.getPostsByUserId = async (req, res) => {
     }
 
     const posts = await Post.find(query)
-      .populate('authorId', 'username name avatar isVerified')
+      .populate('authorId', 'username name avatar isVerified accountStatus')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -254,12 +310,25 @@ exports.getSavedPostsByUserId = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    const user = await User.findById(userId).select('savedPosts');
+    const user = await User.findById(userId).select('savedPosts accountStatus');
     if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found',
       });
+    }
+
+    if (req.user._id.toString() !== userId) {
+      const canAccessAccount = await checkAccountAccess(
+        { _id: userId, accountStatus: user.accountStatus },
+        req.user._id
+      );
+      if (!canAccessAccount) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found',
+        });
+      }
     }
 
     const savedPostIds = user.savedPosts;
@@ -284,6 +353,7 @@ exports.getSavedPostsByUserId = async (req, res) => {
       const isFollowing = await Follow.exists({
         followerId: req.user._id,
         followingId: userId,
+        status: 'accepted',
       });
 
       if (isFollowing) {
@@ -294,7 +364,7 @@ exports.getSavedPostsByUserId = async (req, res) => {
     }
 
     const posts = await Post.find(query)
-      .populate('authorId', 'username name avatar isVerified')
+      .populate('authorId', 'username name avatar isVerified accountStatus')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -373,5 +443,51 @@ exports.deletePost = async (req, res) => {
       message: 'Error deleting post',
       error: err.message,
     });
+  }
+};
+
+const checkAccountAccess = async (author, userId) => {
+  if (author._id.toString() === userId.toString()) {
+    return true;
+  }
+
+  if (author.accountStatus === 'public') {
+    return true;
+  }
+
+  if (author.accountStatus === 'private') {
+    const follow = await Follow.findOne({
+      followerId: userId,
+      followingId: author._id,
+      status: 'accepted',
+    });
+    return !!follow;
+  }
+
+  return false;
+};
+
+const checkPostAccess = async (post, userId) => {
+  if (post.authorId._id.toString() === userId.toString()) {
+    return true;
+  }
+
+  switch (post.visibility) {
+    case 'public':
+      return true;
+
+    case 'private':
+      return false;
+
+    case 'followers':
+      const follow = await Follow.findOne({
+        followerId: userId,
+        followingId: post.authorId._id,
+        status: 'accepted',
+      });
+      return !!follow;
+
+    default:
+      return false;
   }
 };

@@ -1,183 +1,129 @@
-const { Story, Follow } = require('../models/');
-const mongoose = require('mongoose');
+const { Story, User } = require('../models');
+const cloudinary = require('../config/cloudinary.config');
 
-exports.getStoriesForFeed = async (req, res) => {
-  try {
-    const followingDocs = await Follow.find({ followerId: req.user._id }).select('followingId');
-    const followingIds = followingDocs.map((f) => f.followingId);
-    followingIds.push(req.user._id);
-
-    const stories = await Story.aggregate([
-      {
-        $match: {
-          authorId: { $in: followingIds.map((id) => new mongoose.Types.ObjectId(id)) },
-          expiresAt: { $gt: new Date() },
-          isActive: true,
-        },
-      },
-      {
-        $group: {
-          _id: '$authorId',
-          stories: { $push: '$$ROOT' },
-          latestStory: { $max: '$createdAt' },
-        },
-      },
-      { $sort: { latestStory: -1 } },
-      {
-        $lookup: {
-          from: 'users',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'user',
-        },
-      },
-      { $unwind: '$user' },
-      {
-        $project: {
-          'user.passwordHash': 0,
-          'user.email': 0,
-          'user.resetToken': 0,
-          'user.resetTokenExpiry': 0,
-        },
-      },
-    ]);
-
-    const transformedStories = stories.map((userStory) => ({
-      id: userStory._id.toString(),
-      username: userStory.user.username,
-      avatar: userStory.user.avatar,
-      stories: userStory.stories.map((story) => ({
-        id: story._id.toString(),
-        image: story.media.url,
-        type: story.media.type,
-        duration: story.media.duration,
-        caption: story.caption,
-        createdAt: story.createdAt,
-      })),
-    }));
-
-    res.status(200).json({
-      success: true,
-      stories: transformedStories,
-    });
-  } catch (error) {
-    console.error('Error fetching stories:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching stories',
-    });
-  }
-};
-
+// Create a new story
 exports.createStory = async (req, res) => {
   try {
-    const { mediaUrl, mediaType, caption } = req.body;
-
-    if (!mediaUrl || !mediaType) {
-      return res.status(400).json({
-        success: false,
-        message: 'Media URL and type are required',
-      });
+    if (!req.file) {
+      return res.status(400).json({ error: 'Media file is required' });
     }
 
+    let uploadResult;
+    try {
+      uploadResult = await cloudinary.uploader.upload(req.file.path, {
+        resource_type: req.file.mimetype.startsWith('video') ? 'video' : 'image',
+        folder: 'stories',
+      });
+    } catch (uploadError) {
+      return res.status(500).json({ error: 'Failed to upload media to Cloudinary' });
+    }
+
+    const mediaType = req.file.mimetype.startsWith('video') ? 'video' : 'image';
+    const defaultDuration = mediaType === 'video' ? 15 : 7;
+
     const story = new Story({
-      authorId: req.user._id,
+      authorId: req.user.id,
       media: {
-        url: mediaUrl,
+        url: uploadResult.secure_url,
         type: mediaType,
-        duration: mediaType === 'video' ? 15 : 7,
+        duration: defaultDuration,
       },
-      caption,
+      caption: req.body.caption || '',
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     });
 
     await story.save();
-
-    const populatedStory = await Story.findById(story._id).populate('authorId', 'username avatar');
+    await story.populate('authorId', 'username avatar name');
 
     res.status(201).json({
-      success: true,
-      story: {
-        id: populatedStory._id.toString(),
-        username: populatedStory.authorId.username,
-        avatar: populatedStory.authorId.avatar,
-        image: populatedStory.media.url,
-        type: populatedStory.media.type,
-        caption: populatedStory.caption,
-        createdAt: populatedStory.createdAt,
-      },
+      message: 'Story created successfully',
+      story,
     });
   } catch (error) {
-    console.error('Error creating story:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error creating story',
-    });
+    console.error('Create story error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 };
 
-exports.deleteStory = async (req, res) => {
+// Get stories from followed users
+exports.getFollowedStories = async (req, res) => {
   try {
-    const { storyId } = req.params;
-
-    const story = await Story.findOne({
-      _id: storyId,
-      authorId: req.user._id,
-    });
-
-    if (!story) {
-      return res.status(404).json({
-        success: false,
-        message: 'Story not found or not authorized',
-      });
-    }
-
-    await Story.findByIdAndDelete(storyId);
-
-    res.status(200).json({
-      success: true,
-      message: 'Story deleted successfully',
-    });
-  } catch (error) {
-    console.error('Error deleting story:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error deleting story',
-    });
-  }
-};
-
-exports.getUserStories = async (req, res) => {
-  try {
-    const { userId } = req.params;
+    const currentUserId = req.user.id;
+    const currentUser = await User.findById(currentUserId).select('following');
+    const followingIds = currentUser.following || [];
+    const userIds = [...followingIds, currentUserId];
 
     const stories = await Story.find({
-      authorId: userId,
+      authorId: { $in: userIds },
       expiresAt: { $gt: new Date() },
       isActive: true,
     })
-      .sort({ createdAt: -1 })
-      .populate('authorId', 'username avatar');
+      .populate('authorId', 'username avatar name')
+      .sort({ createdAt: -1 });
 
-    const transformedStories = stories.map((story) => ({
-      id: story._id.toString(),
-      username: story.authorId.username,
-      avatar: story.authorId.avatar,
-      image: story.media.url,
-      type: story.media.type,
-      caption: story.caption,
-      createdAt: story.createdAt,
-    }));
+    const storiesByUser = stories.reduce((acc, story) => {
+      const userId = story.authorId._id.toString();
+      if (!acc[userId]) {
+        acc[userId] = { user: story.authorId, stories: [] };
+      }
+      acc[userId].stories.push(story);
+      return acc;
+    }, {});
 
-    res.status(200).json({
-      success: true,
-      stories: transformedStories,
-    });
+    res.json({ stories: storiesByUser });
   } catch (error) {
-    console.error('Error fetching user stories:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching user stories',
+    console.error('Get followed stories error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Get user's active stories
+exports.getUserStories = async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const stories = await Story.getActiveStoriesByUserId(userId).populate(
+      'authorId',
+      'username avatar name'
+    );
+    res.json({ stories });
+  } catch (error) {
+    console.error('Get user stories error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Delete a story
+exports.deleteStory = async (req, res) => {
+  try {
+    const story = await Story.findOne({
+      _id: req.params.storyId,
+      authorId: req.user.id,
     });
+
+    if (!story) {
+      return res.status(404).json({ error: 'Story not found' });
+    }
+
+    await Story.findByIdAndDelete(req.params.storyId);
+    res.json({ message: 'Story deleted successfully' });
+  } catch (error) {
+    console.error('Delete story error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Mark expired stories as inactive (cron job)
+exports.deactivateExpiredStories = async () => {
+  try {
+    const result = await Story.updateMany(
+      {
+        expiresAt: { $lte: new Date() },
+        isActive: true,
+      },
+      { isActive: false }
+    );
+    console.log(`Deactivated ${result.modifiedCount} expired stories`);
+  } catch (error) {
+    console.error('Deactivate expired stories error:', error);
   }
 };

@@ -30,7 +30,6 @@ const messageSchema = new mongoose.Schema(
       default: '',
     },
     media: [mediaSchema],
-    // REMOVED: seenBy array from message level
   },
   {
     timestamps: true,
