@@ -2,7 +2,7 @@
   "name": "chyloo-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "Chyloo Backend — The server-side API for Chyloo, a modern social media platform with real-time features powered by Express, MongoDB, and Socket.io.",
+  "description": "Chyloo Backend - The server-side API for Chyloo, a modern social media platform with real-time features powered by Express, MongoDB, and Socket.io.",
   "main": "index.js",
   "scripts": {
     "dev": "nodemon index.js",

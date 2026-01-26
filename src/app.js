@@ -54,7 +54,7 @@ app.get('/', (req, res) => {
   res.status(200).json({
     name: 'Chyloo API',
     description:
-      'Backend API for Chyloo — a modern social media platform built with Node.js, Express, and MongoDB.',
+      'Backend API for Chyloo - a modern social media platform built with Node.js, Express, and MongoDB.',
     author: 'Muhammad Sohaib Ali',
     repository: 'https://github.com/sohaibalidev/Chyloo-Server',
     frontend: appConfig.FRONTEND_URL,

@@ -58,7 +58,6 @@ exports.createComment = async (req, res) => {
       });
     }
 
-    // Check post access
     const canAccess = await checkPostAccess(post, userId);
     if (!canAccess) {
       return res.status(403).json({
@@ -121,7 +120,6 @@ exports.likeComment = async (req, res) => {
       });
     }
 
-    // Check post access
     const canAccess = await checkPostAccess(post, userId);
     if (!canAccess) {
       return res.status(403).json({

@@ -27,14 +27,12 @@ const chatSchema = new mongoose.Schema(
       ref: 'Message',
       default: null,
     },
-    // NEW: Seen by array at conversation level
     seenBy: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
       },
     ],
-    // NEW: Track if there are new messages for each user
     hasNewMessages: {
       type: Boolean,
       default: false,

@@ -49,7 +49,6 @@ exports.unfollowUser = async (req, res) => {
       return res.status(400).json({ success: false, message: 'You are not following this user' });
     }
 
-    // Remove follow notification for the target user
     await Notification.deleteMany({
       senderId: req.user._id,
       recipientId: targetUserId,
@@ -57,7 +56,6 @@ exports.unfollowUser = async (req, res) => {
       targetId: req.user._id,
     });
 
-    // Remove follow request notification if it exists
     await Notification.deleteMany({
       senderId: req.user._id,
       recipientId: targetUserId,
@@ -153,7 +151,6 @@ exports.acceptFollowRequest = async (req, res) => {
     followRequest.status = 'accepted';
     await followRequest.save();
 
-    // Remove the follow request notification
     await Notification.deleteMany({
       senderId: followerId,
       recipientId: userId,
@@ -192,7 +189,6 @@ exports.rejectFollowRequest = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Follow request not found' });
     }
 
-    // Remove the follow request notification
     await Notification.deleteMany({
       senderId: followerId,
       recipientId: userId,

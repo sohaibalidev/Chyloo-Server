@@ -31,13 +31,11 @@ exports.updateProfile = async (req, res) => {
     let avatarUrl = user.avatar;
     if (req.file) {
       try {
-        // Delete old avatar from Cloudinary if exists
         if (user.avatar && user.avatar.includes('cloudinary')) {
           const publicId = user.avatar.split('/').pop().split('.')[0];
           await cloudinary.uploader.destroy(`avatars/${publicId}`);
         }
 
-        // Upload new avatar to Cloudinary
         const result = await cloudinary.uploader.upload(req.file.path, {
           folder: 'avatars',
           width: 300,
@@ -123,7 +121,6 @@ exports.deleteAvatar = async (req, res) => {
         await cloudinary.uploader.destroy(`avatars/${publicId}`);
       } catch (cloudinaryError) {
         console.error('Cloudinary delete error:', cloudinaryError);
-        // Continue with deletion even if Cloudinary delete fails
       }
     }
 
