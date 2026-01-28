@@ -18,8 +18,14 @@ exports.setupSocket = (server) => {
       console.log(`[SOCKET] User ${userId} joined their personal room`);
     });
 
-    socket.on('joinConversation', (chatId) => {
-      socket.leaveAll();
+    socket.on('joinConversation', (chatId, userId) => {
+      for (const room of socket.rooms) {
+        if (room !== socket.id && !room.startsWith('user_')) {
+          socket.leave(room);
+        }
+      }
+      
+      socket.join(`user_${userId}`);
       socket.join(chatId);
       console.log(`[SOCKET] User ${socket.id} joined conversation ${chatId}`);
     });

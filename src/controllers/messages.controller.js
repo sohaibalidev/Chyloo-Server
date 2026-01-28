@@ -126,6 +126,7 @@ exports.sendMessage = async (req, res) => {
 
       chat.members.forEach((member) => {
         if (member._id.toString() !== userId.toString()) {
+          console.log(`Emitting refreshConversationList to user_${member._id}`);
           global._io.to(`user_${member._id}`).emit('refreshConversationList');
         }
       });

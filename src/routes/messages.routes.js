@@ -11,7 +11,7 @@ router.post('/group', upload.single('groupIcon'), messageController.createGroupC
 // Message routes
 router.get('/:chatId', messageController.getMessages);
 router.post('/', upload.array('media', 10), messageController.sendMessage);
-router.post('/seen', messageController.markAsSeen); // UPDATED: Changed from /:messageId/seen to /seen
+router.post('/seen', messageController.markAsSeen); 
 router.delete('/:messageId', messageController.deleteMessage);
 
 module.exports = router;
