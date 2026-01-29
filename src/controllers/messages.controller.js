@@ -46,7 +46,7 @@ exports.getMessages = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    if (!chat.seenBy.includes(userId)) {
+    if (!chat.seenBy.some((id) => id.equals(userId))) {
       chat.seenBy.push(userId);
       await chat.save();
     }
@@ -54,6 +54,13 @@ exports.getMessages = async (req, res) => {
     const messages = await Message.find({ chatId })
       .populate('senderId', 'name username avatar')
       .sort({ createdAt: 1 });
+
+    messages.forEach((msg) => {
+      if (msg.deletedFor.includes(userId)) {
+        msg.text = '';
+        msg.media = [];
+      }
+    });
 
     res.json({ success: true, messages });
   } catch (error) {
@@ -108,8 +115,9 @@ exports.sendMessage = async (req, res) => {
 
     await message.save();
 
-    chat.seenBy = [userId]; 
+    chat.seenBy = [userId];
     chat.lastMessageId = message._id;
+    chat.hasNewMessages = true;
     await chat.save();
 
     await chat.populate('members', 'name username avatar');
@@ -126,7 +134,6 @@ exports.sendMessage = async (req, res) => {
 
       chat.members.forEach((member) => {
         if (member._id.toString() !== userId.toString()) {
-          console.log(`Emitting refreshConversationList to user_${member._id}`);
           global._io.to(`user_${member._id}`).emit('refreshConversationList');
         }
       });
@@ -146,7 +153,7 @@ exports.sendMessage = async (req, res) => {
 
 exports.markAsSeen = async (req, res) => {
   try {
-    const { chatId } = req.body; 
+    const { chatId } = req.body;
     const userId = req.user._id;
 
     const chat = await Chat.findOne({ _id: chatId, members: userId });
@@ -154,7 +161,7 @@ exports.markAsSeen = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    if (!chat.seenBy.includes(userId)) {
+    if (!chat.seenBy.some((id) => id.equals(userId))) {
       chat.seenBy.push(userId);
       await chat.save();
     }
@@ -199,7 +206,7 @@ exports.getOrCreateConversation = async (req, res) => {
       conversation = new Chat({
         members: [currentUserId, otherUserId],
         isGroup: false,
-        seenBy: [currentUserId], 
+        seenBy: [currentUserId],
       });
 
       await conversation.save();
@@ -249,7 +256,7 @@ exports.createGroupConversation = async (req, res) => {
       isGroup: true,
       groupName,
       groupIcon,
-      seenBy: [currentUserId], 
+      seenBy: [currentUserId],
     });
 
     await conversation.save();
@@ -265,6 +272,7 @@ exports.createGroupConversation = async (req, res) => {
 exports.deleteMessage = async (req, res) => {
   try {
     const { messageId } = req.params;
+    const { deleteType } = req.query;
     const userId = req.user._id;
 
     const message = await Message.findById(messageId);
@@ -272,28 +280,65 @@ exports.deleteMessage = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Message not found' });
     }
 
-    if (message.senderId.toString() !== userId.toString()) {
-      return res.status(403).json({ success: false, message: 'Can only delete your own messages' });
+    if (deleteType === 'me') {
+      await Message.findByIdAndUpdate(messageId, {
+        $addToSet: { deletedFor: userId },
+      });
+
+      if (global._io) {
+        global._io.to(userId.toString()).emit('messageDeleted', { messageId, deleteType: 'me' });
+      }
+
+      return res.json({
+        success: true,
+        message: 'Message deleted for you',
+      });
     }
 
-    if (message.media && message.media.length > 0) {
-      for (const media of message.media) {
-        if (media.publicId) {
-          await cloudinary.uploader.destroy(media.publicId);
+    if (deleteType === 'everyone') {
+      if (!message.senderId.equals(userId)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Only sender can delete for everyone',
+        });
+      }
+
+      if (message.media?.length > 0) {
+        for (const media of message.media) {
+          if (media.publicId) {
+            await cloudinary.uploader.destroy(media.publicId);
+          }
         }
       }
+
+      await Message.findByIdAndUpdate(messageId, {
+        text: '',
+        media: [],
+        isDeletedForEveryone: true,
+      });
+
+      if (global._io) {
+        global._io
+          .to(message.chatId.toString())
+          .emit('messageDeleted', { messageId, deleteType: 'forEveryone' });
+      }
+
+      return res.json({
+        success: true,
+        message: 'Message deleted for everyone',
+      });
     }
 
-    await Message.findByIdAndDelete(messageId);
-
-    if (global._io) {
-      global._io.to(message.chatId.toString()).emit('messageDeleted', { messageId });
-    }
-
-    res.json({ success: true, message: 'Message deleted successfully' });
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid delete type',
+    });
   } catch (error) {
     console.error('Delete message error:', error);
-    res.status(500).json({ success: false, message: 'Failed to delete message' });
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete message',
+    });
   }
 };
 

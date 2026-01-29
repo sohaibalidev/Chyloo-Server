@@ -30,10 +30,18 @@ const messageSchema = new mongoose.Schema(
       default: '',
     },
     media: [mediaSchema],
+    deletedFor: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
+    isDeletedForEveryone: {
+      type: Boolean,
+      default: false,
+    },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
 messageSchema.index({ chatId: 1, createdAt: -1 });
