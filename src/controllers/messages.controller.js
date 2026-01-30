@@ -22,8 +22,23 @@ exports.getConversations = async (req, res) => {
       conversations.map(async (conv) => {
         const conversationObj = conv.toObject();
 
-        const hasUserSeen = conv.seenBy.includes(userId);
+        const hasUserSeen = conv.seenBy.map((id) => id.toString()).includes(userId.toString());
+
         conversationObj.hasNewMessages = !hasUserSeen;
+
+        if (
+          conversationObj.lastMessageId &&
+          conversationObj.lastMessageId.deletedFor
+            ?.map((id) => id.toString())
+            .includes(userId.toString())
+        ) {
+          const lastVisibleMessage = await Message.findOne({
+            chatId: conversationObj._id,
+            deletedFor: { $ne: userId },
+          }).sort({ createdAt: -1 });
+
+          conversationObj.lastMessageId = lastVisibleMessage || null;
+        }
 
         return conversationObj;
       })
@@ -133,9 +148,7 @@ exports.sendMessage = async (req, res) => {
       });
 
       chat.members.forEach((member) => {
-        if (member._id.toString() !== userId.toString()) {
-          global._io.to(`user_${member._id}`).emit('refreshConversationList');
-        }
+        global._io.to(`user_${member._id}`).emit('refreshConversationList');
       });
 
       console.log(
@@ -280,14 +293,19 @@ exports.deleteMessage = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Message not found' });
     }
 
+    const chat = await Chat.findOne({ _id: message.chatId, members: userId }).populate(
+      'members',
+      '_id'
+    );
+
     if (deleteType === 'me') {
       await Message.findByIdAndUpdate(messageId, {
         $addToSet: { deletedFor: userId },
       });
 
-      if (global._io) {
-        global._io.to(userId.toString()).emit('messageDeleted', { messageId, deleteType: 'me' });
-      }
+      chat.members.forEach((member) => {
+        global._io.to(`user_${member._id}`).emit('refreshConversationList');
+      });
 
       return res.json({
         success: true,
@@ -318,10 +336,12 @@ exports.deleteMessage = async (req, res) => {
       });
 
       if (global._io) {
-        global._io
-          .to(message.chatId.toString())
-          .emit('messageDeleted', { messageId, deleteType: 'forEveryone' });
+        global._io.to(message.chatId.toString()).emit('messageDeleted', { messageId });
       }
+
+      chat.members.forEach((member) => {
+        global._io.to(`user_${member._id}`).emit('refreshConversationList');
+      });
 
       return res.json({
         success: true,
